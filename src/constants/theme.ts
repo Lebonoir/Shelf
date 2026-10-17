@@ -1,65 +1,70 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://unistyl.es/), etc.
+ * Shelf design tokens. Warm paper in light mode, ink in dark mode,
+ * one vermilion accent borrowed from printed manga covers.
  */
-
-import '@/global.css';
-
-import { Platform } from 'react-native';
 
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    background: '#F3EFE7',
+    surface: '#EAE4D8',
+    surfaceStrong: '#DDD5C5',
+    text: '#1B1A1F',
+    textSecondary: '#6B6660',
+    textTertiary: '#9A938A',
+    border: 'rgba(27, 26, 31, 0.10)',
+    accent: '#C4462E',
+    accentSoft: 'rgba(196, 70, 46, 0.12)',
+    onAccent: '#FFF8F2',
+    danger: '#B3261E',
+    shadow: 'rgba(60, 40, 20, 0.18)',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    background: '#141316',
+    surface: '#1E1C20',
+    surfaceStrong: '#2A272C',
+    text: '#F2EEE7',
+    textSecondary: '#A8A29A',
+    textTertiary: '#6F6A64',
+    border: 'rgba(242, 238, 231, 0.09)',
+    accent: '#E0664C',
+    accentSoft: 'rgba(224, 102, 76, 0.16)',
+    onAccent: '#1B0F0B',
+    danger: '#F2B8B5',
+    shadow: 'rgba(0, 0, 0, 0.5)',
   },
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+export type Palette = { [K in keyof typeof Colors.light]: string };
+export type ThemeColor = keyof Palette;
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
+export const Fonts = {
+  display: 'Fraunces_600SemiBold',
+  displayRegular: 'Fraunces_400Regular',
+  sans: 'Geist_400Regular',
+  sansMedium: 'Geist_500Medium',
+  sansSemiBold: 'Geist_600SemiBold',
+  mono: 'GeistMono_500Medium',
+} as const;
 
 export const Spacing = {
   half: 2,
   one: 4,
   two: 8,
-  three: 16,
-  four: 24,
-  five: 32,
-  six: 64,
+  three: 12,
+  four: 16,
+  five: 24,
+  six: 32,
+  seven: 48,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+export const Radius = {
+  sm: 6,
+  md: 10,
+  lg: 16,
+  pill: 999,
+} as const;
+
+/** Book covers are roughly 2:3. */
+export const COVER_RATIO = 1.5;
+
+export const MaxContentWidth = 720;

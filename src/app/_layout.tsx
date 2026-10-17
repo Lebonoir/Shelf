@@ -1,18 +1,113 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { Fraunces_400Regular, Fraunces_600SemiBold } from '@expo-google-fonts/fraunces';
+import { Geist_400Regular, Geist_500Medium, Geist_600SemiBold } from '@expo-google-fonts/geist';
+import { GeistMono_500Medium } from '@expo-google-fonts/geist-mono';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useFonts } from 'expo-font';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTheme } from '@/hooks/use-theme';
+import { useIsAdmin } from '@/lib/admin';
+import { useProfile } from '@/lib/profile';
+import { AuthProvider, useAuth } from '@/providers/auth';
 
 SplashScreen.preventAutoHideAsync();
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+// On the web, scrollbars eat into the width the layout is computed from and
+// knock every screen off its gutter. Shelf is a phone-first app: hide them.
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = '* { scrollbar-width: none; } *::-webkit-scrollbar { display: none; }';
+  document.head.appendChild(style);
+}
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 60_000, retry: 1 },
+  },
+});
+
+export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Fraunces_400Regular,
+    Fraunces_600SemiBold,
+    Geist_400Regular,
+    Geist_500Medium,
+    Geist_600SemiBold,
+    GeistMono_500Medium,
+  });
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AnimatedSplashOverlay />
-      <AppTabs />
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <RootNavigator ready={fontsLoaded || !!fontError} />
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
+
+function RootNavigator({ ready }: { ready: boolean }) {
+  const { session, loading } = useAuth();
+  const scheme = useColorScheme();
+  const theme = useTheme();
+  const userId = session?.user.id;
+  const lastUser = useRef(userId);
+  const profile = useProfile(!!session);
+  const isAdmin = useIsAdmin(!!session);
+  const profileLoading = !!session && profile.isPending;
+  // If the profile can't load, don't trap the user in onboarding; let them in.
+  const onboarded = !!profile.data?.onboardedAt || profile.isError;
+
+  useEffect(() => {
+    if (ready && !loading && !profileLoading) SplashScreen.hideAsync();
+  }, [ready, loading, profileLoading]);
+
+  // Never show one account's shelf to another after switching.
+  useEffect(() => {
+    if (lastUser.current !== userId) queryClient.clear();
+    lastUser.current = userId;
+  }, [userId]);
+
+  if (!ready || loading || profileLoading) return null;
+
+  const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+  const navTheme = {
+    ...base,
+    colors: {
+      ...base.colors,
+      background: theme.background,
+      card: theme.background,
+      text: theme.text,
+      border: theme.border,
+      primary: theme.accent,
+    },
+  };
+
+  return (
+    <ThemeProvider value={navTheme}>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}>
+        <Stack.Protected guard={!!session && onboarded}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="title/[key]" />
+          <Stack.Screen name="find" options={{ presentation: 'modal' }} />
+        </Stack.Protected>
+        {/* The server also checks admin on every query; this only hides the route. */}
+        <Stack.Protected guard={!!session && onboarded && isAdmin.data === true}>
+          <Stack.Screen name="admin" />
+        </Stack.Protected>
+        {/* Reachable before onboarding, and again later to retake the questions. */}
+        <Stack.Protected guard={!!session}>
+          <Stack.Screen name="onboarding" options={{ gestureEnabled: onboarded }} />
+        </Stack.Protected>
+        <Stack.Protected guard={!session}>
+          <Stack.Screen name="sign-in" />
+        </Stack.Protected>
+      </Stack>
     </ThemeProvider>
   );
 }
