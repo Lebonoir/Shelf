@@ -1,9 +1,8 @@
 // Identifies a book, manga or comic from a photo (cover, spine, barcode or a
-// page) with Claude vision. The app then looks the answer up in its catalogs.
+// page) with Gemini vision. The app then looks the answer up in its catalogs.
 //
 // Body: { "image": "<base64 jpeg/png/webp>", "mediaType": "image/jpeg" }
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const CORS = {
@@ -12,10 +11,14 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
-type MediaType = (typeof MEDIA_TYPES)[number];
+// Tried in order. Free-tier traffic is the first to be turned away when a
+// model is busy (429/503), so fall back to lighter models instead of failing.
+const MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 
-// ~5 MB of image data once decoded, Claude's per-image ceiling.
+const MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+// Keeps uploads well under Gemini's 20 MB inline request limit.
 const MAX_BASE64_LENGTH = 6_800_000;
 
 const nullableString = { type: ['string', 'null'] };
@@ -26,7 +29,7 @@ const RESULT_SCHEMA = {
     found: { type: 'boolean' },
     title: nullableString,
     authors: { type: 'array', items: { type: 'string' } },
-    medium: { type: ['string', 'null'], enum: ['book', 'manga', 'comic', null] },
+    medium: { type: 'string', enum: ['book', 'manga', 'comic', 'unknown'] },
     series: nullableString,
     volume: nullableString,
     publisher: nullableString,
@@ -39,10 +42,9 @@ const RESULT_SCHEMA = {
     'found', 'title', 'authors', 'medium', 'series', 'volume',
     'publisher', 'isbn', 'search_query', 'confidence', 'note',
   ],
-  additionalProperties: false,
 };
 
-const SYSTEM = `You identify books, manga and comics from photos for a reading-tracker app.
+const PROMPT = `You identify books, manga and comics from photos for a reading-tracker app.
 The photo may show a front cover, a spine, a back cover with a barcode, a title page, or a shelf.
 If several titles are visible, pick the most prominent one and say so in "note".
 
@@ -50,7 +52,7 @@ Fill the fields like this:
 - found: false only if no book, manga or comic can be made out at all.
 - title: the work's title as published in English when you know it, without volume numbers.
 - authors: writer first, then artist if they differ. Empty if unknown.
-- medium: "manga" for Japanese, Korean or Chinese comics; "comic" for Western comics and graphic novels; "book" for prose.
+- medium: "manga" for Japanese, Korean or Chinese comics; "comic" for Western comics and graphic novels; "book" for prose; "unknown" if you cannot tell.
 - series / volume: the series name and volume or issue number, when the photo shows one.
 - isbn: digits only (ISBN-13 preferred), and only if you can read it in the photo.
 - search_query: the best short query to find this work in a catalog search (usually the series or work title, no volume number).
@@ -63,10 +65,26 @@ let cachedKey: string | null = null;
 async function apiKey(): Promise<string> {
   if (cachedKey) return cachedKey;
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-  const { data, error } = await admin.rpc('anthropic_api_key');
-  if (error || !data) throw new Error('The Anthropic key is not configured yet');
+  const { data, error } = await admin.rpc('gemini_api_key');
+  if (error || !data) throw new Error('The Gemini key is not configured yet');
   cachedKey = data as string;
   return cachedKey;
+}
+
+type Step = { type?: string; content?: { type?: string; text?: string }[] };
+
+/**
+ * The interaction's answer. Over REST it arrives as `steps`: "thought" steps
+ * first, then a "model_output" step whose content holds the text.
+ */
+function outputText(body: { output_text?: unknown; steps?: Step[] }): string | null {
+  if (typeof body.output_text === 'string') return body.output_text;
+  const text = (body.steps ?? [])
+    .filter((step) => step.type === 'model_output')
+    .flatMap((step) => step.content ?? [])
+    .map((part) => (typeof part.text === 'string' ? part.text : ''))
+    .join('');
+  return text || null;
 }
 
 const json = (body: unknown, status = 200) =>
@@ -87,51 +105,49 @@ Deno.serve(async (req) => {
   }
 
   const image = body.image?.replace(/^data:[^;]+;base64,/, '');
-  const mediaType = (body.mediaType ?? 'image/jpeg') as MediaType;
+  const mediaType = body.mediaType ?? 'image/jpeg';
   if (!image) return json({ error: 'Send { image: base64, mediaType }' }, 400);
   if (!MEDIA_TYPES.includes(mediaType)) return json({ error: 'Use a JPEG, PNG or WebP image' }, 400);
   if (image.length > MAX_BASE64_LENGTH) return json({ error: 'That image is too large' }, 413);
 
   try {
-    const client = new Anthropic({ apiKey: await apiKey() });
-    const response = await client.beta.messages.create({
-      model: 'claude-opus-5-5',
-      max_tokens: 4000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      thinking: { type: 'adaptive' },
-      output_config: {
-        effort: 'low',
-        format: { type: 'json_schema', schema: RESULT_SCHEMA },
-      },
-      system: SYSTEM,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: image } },
-            { type: 'text', text: 'What is this?' },
+    const key = await apiKey();
+    let res: Response | null = null;
+    for (const model of MODELS) {
+      res = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          input: [
+            { type: 'text', text: PROMPT },
+            { type: 'image', data: image, mime_type: mediaType },
           ],
-        },
-      ],
-    } as Anthropic.Beta.MessageCreateParamsNonStreaming);
+          response_format: { type: 'text', mime_type: 'application/json', schema: RESULT_SCHEMA },
+        }),
+      });
+      if (res.ok || (res.status !== 429 && res.status !== 503)) break;
+      console.error('Gemini busy', model, res.status, (await res.text().catch(() => '')).slice(0, 500));
+    }
 
-    if (response.stop_reason === 'refusal') {
-      return json({ error: "Couldn't read that photo. Try another angle." }, 422);
+    if (!res!.ok) {
+      const detail = await res!.text().catch(() => '');
+      console.error('Gemini error', res!.status, detail.slice(0, 2000));
+      if (res!.status === 429 || res!.status === 503) {
+        return json({ error: 'Gemini is busy right now. Try again in a minute.' }, 503);
+      }
+      if (res!.status === 403) return json({ error: 'The Gemini key was rejected' }, 502);
+      if (res!.status === 400) return json({ error: 'Gemini could not read that request' }, 502);
+      return json({ error: `Gemini responded ${res!.status}` }, 502);
     }
-    const text = response.content.find((b) => b.type === 'text');
-    if (!text || text.type !== 'text') return json({ error: 'No answer came back' }, 502);
-    return json({ result: JSON.parse(text.text) });
+
+    const text = outputText(await res!.json());
+    if (!text) return json({ error: "Couldn't read that photo. Try another angle." }, 422);
+
+    const result = JSON.parse(text);
+    if (result.medium === 'unknown') result.medium = null;
+    return json({ result });
   } catch (err) {
-    if (err instanceof Anthropic.RateLimitError) {
-      return json({ error: 'Too many scans right now. Try again in a minute.' }, 429);
-    }
-    if (err instanceof Anthropic.AuthenticationError) {
-      return json({ error: 'The Anthropic key was rejected' }, 502);
-    }
-    if (err instanceof Anthropic.APIError) {
-      return json({ error: `Claude responded ${err.status}` }, 502);
-    }
     return json({ error: err instanceof Error ? err.message : 'Identification failed' }, 502);
   }
 });

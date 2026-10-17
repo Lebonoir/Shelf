@@ -11,7 +11,7 @@ import {
 } from './catalog';
 import { callFunction } from './functions';
 
-/** What Claude read off the photo (see supabase/functions/identify-title). */
+/** What Gemini read off the photo (see supabase/functions/identify-title). */
 export type Identification = {
   found: boolean;
   title: string | null;
@@ -28,7 +28,7 @@ export type Identification = {
 
 export type Photo = { uri: string; width: number; height: number };
 
-/** Claude reads images best at up to ~1568px on the long edge; bigger only costs upload time. */
+/** Plenty of detail for reading a cover; anything bigger only costs upload time. */
 const MAX_EDGE = 1568;
 
 /** Shrinks a camera or library photo and returns it as base64 JPEG. */
@@ -69,7 +69,12 @@ function searchFor(medium: Medium | null, query: string, author: string | undefi
  * title matches from the catalog for its format.
  */
 export async function findMatches(id: Identification): Promise<CatalogItem[]> {
-  const query = id.search_query ?? id.series ?? id.title;
+  // Catalog searches match titles, and the model sometimes folds the author into
+  // search_query ("Berserk Kentaro Miura"), so prefer the series or title it read.
+  const query =
+    id.medium === 'manga' || id.medium === 'comic'
+      ? (id.series ?? id.title ?? id.search_query)
+      : (id.title ?? id.search_query);
   if (!id.found || !query) return [];
 
   const [byIsbn, byTitle] = await Promise.allSettled([

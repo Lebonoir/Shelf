@@ -301,7 +301,7 @@ export default function FindScreen() {
   const photo = state.phase === 'idle' ? null : state.photo;
   const busy = state.phase === 'reading' || state.phase === 'searching';
   const identification = state.phase === 'searching' || state.phase === 'done' ? state.id : null;
-  const query = identification?.search_query ?? identification?.title ?? null;
+  const query = identification?.series ?? identification?.title ?? identification?.search_query ?? null;
   // Before a photo, keep the frame short enough that both buttons sit above the fold.
   // With a photo, give it a cover's proportions.
   const frameHeight = Math.round(
