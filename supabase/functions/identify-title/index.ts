@@ -16,6 +16,10 @@ const CORS = {
 const MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 
+// Edge functions get 150 s of wall clock. Cap each model so a slow one leaves
+// time to fall back instead of the whole request being killed.
+const ATTEMPT_TIMEOUT_MS = 50_000;
+
 const MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 // Keeps uploads well under Gemini's 20 MB inline request limit.
@@ -32,6 +36,7 @@ const RESULT_SCHEMA = {
     medium: { type: 'string', enum: ['book', 'manga', 'comic', 'unknown'] },
     series: nullableString,
     volume: nullableString,
+    series_start_year: { type: ['integer', 'null'] },
     publisher: nullableString,
     isbn: nullableString,
     search_query: nullableString,
@@ -39,7 +44,7 @@ const RESULT_SCHEMA = {
     note: nullableString,
   },
   required: [
-    'found', 'title', 'authors', 'medium', 'series', 'volume',
+    'found', 'title', 'authors', 'medium', 'series', 'volume', 'series_start_year',
     'publisher', 'isbn', 'search_query', 'confidence', 'note',
   ],
 };
@@ -54,6 +59,7 @@ Fill the fields like this:
 - authors: writer first, then artist if they differ. Empty if unknown.
 - medium: "manga" for Japanese, Korean or Chinese comics; "comic" for Western comics and graphic novels; "book" for prose; "unknown" if you cannot tell.
 - series / volume: the series name and volume or issue number, when the photo shows one.
+- series_start_year: for comics and manga, the year this particular series run began, which catalogs use to tell relaunches apart (e.g. 2011 for Batman written by Scott Snyder, since that run is catalogued as "Batman (2011)"). Null if you are not sure.
 - isbn: digits only (ISBN-13 preferred), and only if you can read it in the photo.
 - search_query: the best short query to find this work in a catalog search (usually the series or work title, no volume number).
 - confidence: "high" when the title is legible, "medium" when partly legible or inferred from the art, "low" when guessing.
@@ -114,34 +120,47 @@ Deno.serve(async (req) => {
     const key = await apiKey();
     let res: Response | null = null;
     for (const model of MODELS) {
-      res = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          input: [
-            { type: 'text', text: PROMPT },
-            { type: 'image', data: image, mime_type: mediaType },
-          ],
-          response_format: { type: 'text', mime_type: 'application/json', schema: RESULT_SCHEMA },
-        }),
-      });
+      try {
+        res = await fetch(ENDPOINT, {
+          method: 'POST',
+          headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS),
+          body: JSON.stringify({
+            model,
+            input: [
+              { type: 'text', text: PROMPT },
+              { type: 'image', data: image, mime_type: mediaType },
+            ],
+            // Reading a cover needs little reasoning; the default (medium) ran past two minutes.
+            generation_config: { thinking_level: 'low' },
+            response_format: { type: 'text', mime_type: 'application/json', schema: RESULT_SCHEMA },
+          }),
+        });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'TimeoutError') {
+          console.error('Gemini timed out', model);
+          res = null;
+          continue;
+        }
+        throw err;
+      }
       if (res.ok || (res.status !== 429 && res.status !== 503)) break;
       console.error('Gemini busy', model, res.status, (await res.text().catch(() => '')).slice(0, 500));
     }
 
-    if (!res!.ok) {
-      const detail = await res!.text().catch(() => '');
-      console.error('Gemini error', res!.status, detail.slice(0, 2000));
-      if (res!.status === 429 || res!.status === 503) {
+    if (!res) return json({ error: 'Gemini took too long. Try again in a minute.' }, 504);
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      console.error('Gemini error', res.status, detail.slice(0, 2000));
+      if (res.status === 429 || res.status === 503) {
         return json({ error: 'Gemini is busy right now. Try again in a minute.' }, 503);
       }
-      if (res!.status === 403) return json({ error: 'The Gemini key was rejected' }, 502);
-      if (res!.status === 400) return json({ error: 'Gemini could not read that request' }, 502);
-      return json({ error: `Gemini responded ${res!.status}` }, 502);
+      if (res.status === 403) return json({ error: 'The Gemini key was rejected' }, 502);
+      if (res.status === 400) return json({ error: 'Gemini could not read that request' }, 502);
+      return json({ error: `Gemini responded ${res.status}` }, 502);
     }
 
-    const text = outputText(await res!.json());
+    const text = outputText(await res.json());
     if (!text) return json({ error: "Couldn't read that photo. Try another angle." }, 422);
 
     const result = JSON.parse(text);

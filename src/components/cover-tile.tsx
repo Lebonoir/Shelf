@@ -26,7 +26,7 @@ export function CoverTile({ item, width, meta }: Props) {
       accessibilityRole="button"
       accessibilityLabel={item.title}
       style={{ width }}>
-      <Cover uri={item.coverUrl} title={item.title} width={width} label={MEDIUM_LABEL[item.medium]} byline={item.authors[0]} />
+      <Cover uri={item.coverUrl} title={item.title} width={width} medium={item.medium} byline={item.authors[0]} />
       <View style={styles.caption}>
         <Text variant="label" numberOfLines={2}>
           {item.title}

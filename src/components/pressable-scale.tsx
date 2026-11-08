@@ -18,6 +18,8 @@ export function PressableScale({
   style,
   scaleTo = 0.97,
   haptic = false,
+  // Everything pressable is announced as a button unless the caller says otherwise.
+  accessibilityRole = 'button',
   onPressIn,
   onPressOut,
   onPress,
@@ -29,6 +31,7 @@ export function PressableScale({
   return (
     <AnimatedPressable
       {...props}
+      accessibilityRole={accessibilityRole}
       style={[style, animated]}
       onPressIn={(e) => {
         scale.set(withSpring(scaleTo, SPRING));

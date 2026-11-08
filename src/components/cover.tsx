@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { COVER_RATIO, Fonts, Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { MEDIUM_LABEL, type Medium } from '@/lib/catalog';
 
 import { Text } from './text';
 
@@ -12,8 +13,8 @@ type Props = {
   title: string;
   width: number;
   radius?: number;
-  /** Format shown on the typeset fallback, e.g. "Comic". */
-  label?: string;
+  /** Format shown, in its own ink, on the typeset fallback. */
+  medium?: Medium;
   /** First author, shown on the typeset fallback. */
   byline?: string;
 };
@@ -25,8 +26,10 @@ const COMPACT_WIDTH = 84;
  * A book cover. When the catalog has no art, or the image fails to load,
  * it renders a typeset cover instead of an empty box.
  */
-export function Cover({ uri, title, width, radius = Radius.sm, label, byline }: Props) {
+export function Cover({ uri, title, width, radius = Radius.sm, medium, byline }: Props) {
   const theme = useTheme();
+  const label = medium && MEDIUM_LABEL[medium];
+  const ink = medium ?? 'accent';
   const height = width * COVER_RATIO;
   const [failedUri, setFailedUri] = useState<string | null>(null);
   const showImage = !!uri && failedUri !== uri;
@@ -60,14 +63,14 @@ export function Cover({ uri, title, width, radius = Radius.sm, label, byline }: 
             <View style={[styles.printBorder, { borderColor: theme.border, borderRadius: Math.max(2, radius - 3) }]} />
           )}
           {!compact && label ? (
-            <Text variant="eyebrow" tone="accent" style={{ fontSize: Math.min(11, width / 11) }}>
+            <Text variant="eyebrow" tone={ink} style={{ fontSize: Math.min(11, width / 11) }}>
               {label}
             </Text>
           ) : (
             <View />
           )}
           <View style={{ gap: compact ? 0 : width / 30 }}>
-            <View style={[styles.rule, { backgroundColor: theme.accent, width: compact ? 10 : width / 5 }]} />
+            <View style={[styles.rule, { backgroundColor: theme[ink], width: compact ? 10 : width / 5 }]} />
             <Text
               numberOfLines={compact ? 4 : 5}
               tone="text"

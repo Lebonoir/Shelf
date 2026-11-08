@@ -9,7 +9,7 @@ const VARIANTS = {
   heading: { fontFamily: Fonts.sansSemiBold, fontSize: 17, lineHeight: 22, letterSpacing: -0.2 },
   body: { fontFamily: Fonts.sans, fontSize: 15, lineHeight: 23 },
   label: { fontFamily: Fonts.sansMedium, fontSize: 14, lineHeight: 18 },
-  caption: { fontFamily: Fonts.sans, fontSize: 12.5, lineHeight: 16 },
+  caption: { fontFamily: Fonts.sans, fontSize: 13, lineHeight: 17 },
   eyebrow: {
     fontFamily: Fonts.sansMedium,
     fontSize: 11,
@@ -17,8 +17,11 @@ const VARIANTS = {
     letterSpacing: 1.1,
     textTransform: 'uppercase',
   },
-  mono: { fontFamily: Fonts.mono, fontSize: 12.5, lineHeight: 16, letterSpacing: -0.2 },
+  mono: { fontFamily: Fonts.mono, fontSize: 13, lineHeight: 17, letterSpacing: -0.2 },
 } satisfies Record<string, TextStyle>;
+
+// Big type grows less with Dynamic Type so headings don't swallow the screen (HIG: keep hierarchy at every size).
+const MAX_SCALE: Partial<Record<keyof typeof VARIANTS, number>> = { display: 1.5, title: 1.75 };
 
 export type TextVariant = keyof typeof VARIANTS;
 
@@ -29,5 +32,11 @@ type Props = TextProps & {
 
 export function Text({ variant = 'body', tone = 'text', style, ...props }: Props) {
   const theme = useTheme();
-  return <RNText style={[VARIANTS[variant], { color: theme[tone] }, style]} {...props} />;
+  return (
+    <RNText
+      maxFontSizeMultiplier={MAX_SCALE[variant]}
+      style={[VARIANTS[variant], { color: theme[tone] }, style]}
+      {...props}
+    />
+  );
 }

@@ -60,7 +60,9 @@ export function Button({
 
 const styles = StyleSheet.create({
   button: {
-    height: 48,
+    // minHeight, not height: larger system text grows the button instead of clipping the label.
+    minHeight: 48,
+    paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.five,
     borderRadius: Radius.md,
     borderWidth: StyleSheet.hairlineWidth * 2,

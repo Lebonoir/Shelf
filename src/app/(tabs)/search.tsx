@@ -75,7 +75,7 @@ function ResultRow({ item, owned }: { item: CatalogItem; owned: boolean }) {
 
   return (
     <PressableScale scaleTo={0.985} onPress={() => openTitle(item)} style={styles.result}>
-      <Cover uri={item.coverUrl} title={item.title} width={52} radius={4} label={MEDIUM_LABEL[item.medium]} byline={item.authors[0]} />
+      <Cover uri={item.coverUrl} title={item.title} width={52} radius={4} medium={item.medium} byline={item.authors[0]} />
       <View style={styles.resultText}>
         <Text variant="heading" numberOfLines={2}>
           {item.title}
@@ -247,14 +247,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-    height: 50,
+    minHeight: 50,
     paddingHorizontal: Spacing.four,
     borderRadius: Radius.md,
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
   input: {
     flex: 1,
-    height: '100%',
+    paddingVertical: Spacing.three,
     fontFamily: Fonts.sans,
     fontSize: 16,
   },

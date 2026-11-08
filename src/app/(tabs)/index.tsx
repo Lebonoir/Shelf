@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowRight, Books, Plus, Scan, ShieldCheck, SignOut } from 'phosphor-react-native';
+import { ArrowRight, Books, ChatCircleText, Plus, Scan, ShieldCheck, SignOut } from 'phosphor-react-native';
 import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -18,6 +18,7 @@ import { Text } from '@/components/text';
 import { COVER_RATIO, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useIsAdmin } from '@/lib/admin';
+import { confirmDestructive } from '@/lib/confirm';
 import { MEDIUM_LABEL, UNIT_LABEL } from '@/lib/catalog';
 import {
   STATUS_LABEL,
@@ -45,10 +46,10 @@ function ReadingCard({ entry }: { entry: LibraryEntry }) {
     <PressableScale
       onPress={() => openTitle(item)}
       style={[styles.readingCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-      <Cover uri={item.coverUrl} title={item.title} width={64} label={MEDIUM_LABEL[item.medium]} byline={item.authors[0]} />
+      <Cover uri={item.coverUrl} title={item.title} width={64} medium={item.medium} byline={item.authors[0]} />
       <View style={styles.readingBody}>
         <View style={styles.readingText}>
-          <Text variant="eyebrow" tone="textTertiary">
+          <Text variant="eyebrow" tone={item.medium}>
             {MEDIUM_LABEL[item.medium]}
           </Text>
           <Text variant="heading" numberOfLines={2}>
@@ -64,6 +65,7 @@ function ReadingCard({ entry }: { entry: LibraryEntry }) {
             <PressableScale
               haptic
               scaleTo={0.85}
+              hitSlop={8}
               accessibilityLabel={`Add ${step} ${step === 1 ? unit.one : unit.many}`}
               onPress={() => update.mutate({ id: entry.id, patch: { progress: entry.progress + step } })}
               style={[styles.bump, { backgroundColor: theme.text }]}>
@@ -130,17 +132,29 @@ export default function ShelfScreen() {
         subtitle={summary || undefined}
         trailing={
           <View style={styles.headerActions}>
-            {isAdmin.data && (
+            {/* Admins get their dashboard (where feedback lands); readers get the feedback form. */}
+            {isAdmin.data ? (
               <PressableScale
                 accessibilityLabel="Open admin dashboard"
                 onPress={() => router.push('/admin')}
                 style={[styles.iconButton, { borderColor: theme.border }]}>
                 <ShieldCheck size={18} color={theme.accent} />
               </PressableScale>
+            ) : (
+              <PressableScale
+                accessibilityLabel="Send feedback"
+                onPress={() => router.push({ pathname: '/feedback', params: { from: 'shelf' } })}
+                style={[styles.iconButton, { borderColor: theme.border }]}>
+                <ChatCircleText size={18} color={theme.textSecondary} />
+              </PressableScale>
             )}
             <PressableScale
               accessibilityLabel="Sign out"
-              onPress={() => supabase.auth.signOut()}
+              onPress={() =>
+                confirmDestructive('Sign out?', 'Your shelf stays saved to your account.', 'Sign Out', () =>
+                  void supabase.auth.signOut(),
+                )
+              }
               style={[styles.iconButton, { borderColor: theme.border }]}>
               <SignOut size={18} color={theme.textSecondary} />
             </PressableScale>
@@ -304,8 +318,8 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   iconButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',

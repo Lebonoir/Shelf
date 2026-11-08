@@ -1,11 +1,12 @@
 import { Image } from 'expo-image';
-import { Check, Eye, EyeSlash } from 'phosphor-react-native';
+import { Eye, EyeSlash } from 'phosphor-react-native';
 import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   TextInput,
   View,
   type TextInputProps,
@@ -155,24 +156,26 @@ function RememberMe({ value, onChange }: { value: boolean; onChange: (value: boo
       haptic
       scaleTo={0.98}
       onPress={() => onChange(!value)}
-      accessibilityRole="checkbox"
+      // iOS uses a switch, not a checkbox, for an on/off setting (HIG: Toggles).
+      accessibilityRole="switch"
       accessibilityState={{ checked: value }}
       style={styles.remember}>
-      <View
-        style={[
-          styles.checkbox,
-          value
-            ? { backgroundColor: theme.text, borderColor: theme.text }
-            : { backgroundColor: 'transparent', borderColor: theme.textTertiary },
-        ]}>
-        {value && <Check size={12} color={theme.background} weight="bold" />}
-      </View>
       <View style={{ flex: 1 }}>
         <Text variant="label">Remember me</Text>
         <Text variant="caption" tone="textTertiary">
           {value ? 'Stay signed in on this device.' : 'You will be signed out when the app closes.'}
         </Text>
       </View>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ true: theme.accent, false: theme.surfaceStrong }}
+        thumbColor="#FFFFFF"
+        // react-native-web paints the "on" thumb teal unless told otherwise; native ignores this.
+        {...({ activeThumbColor: '#FFFFFF' } as object)}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      />
     </PressableScale>
   );
 }
@@ -327,6 +330,8 @@ export default function SignIn() {
                   error={errors.email}
                   autoCapitalize="none"
                   autoComplete="email"
+                  textContentType="emailAddress"
+                  autoCorrect={false}
                   keyboardType="email-address"
                   inputMode="email"
                   placeholder="you@example.com"
@@ -339,6 +344,7 @@ export default function SignIn() {
                   secureTextEntry
                   revealable
                   autoComplete={signingUp ? 'new-password' : 'current-password'}
+                  textContentType={signingUp ? 'newPassword' : 'password'}
                   onSubmitEditing={signingUp ? undefined : submit}
                   placeholder="At least 6 characters"
                 />
@@ -352,6 +358,7 @@ export default function SignIn() {
                       secureTextEntry
                       revealable
                       autoComplete="new-password"
+                      textContentType="newPassword"
                       onSubmitEditing={submit}
                       placeholder="Type it again"
                     />
@@ -449,14 +456,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-    height: 50,
+    minHeight: 50,
     borderRadius: Radius.md,
     borderWidth: StyleSheet.hairlineWidth * 2,
     paddingHorizontal: Spacing.four,
   },
   input: {
     flex: 1,
-    height: '100%',
+    paddingVertical: Spacing.three,
     minWidth: 0,
     fontFamily: Fonts.sans,
     fontSize: 16,
@@ -466,14 +473,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
     paddingVertical: Spacing.one,
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: Radius.sm,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   banner: {
     borderRadius: Radius.md,

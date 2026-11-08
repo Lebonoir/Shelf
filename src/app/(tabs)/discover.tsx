@@ -132,8 +132,8 @@ const styles = StyleSheet.create({
     gap: Spacing.seven,
   },
   iconButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',

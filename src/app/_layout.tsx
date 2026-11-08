@@ -17,11 +17,17 @@ import { AuthProvider, useAuth } from '@/providers/auth';
 
 SplashScreen.preventAutoHideAsync();
 
-// On the web, scrollbars eat into the width the layout is computed from and
-// knock every screen off its gutter. Shelf is a phone-first app: hide them.
+// Web-only fixes:
+// - Scrollbars eat into the width the layout is computed from and knock every
+//   screen off its gutter. Shelf is a phone-first app: hide them.
+// - Text fields draw their own focus border, so the browser's outline on the
+//   inner <input> showed up as a second ring inside it. Buttons keep theirs.
 if (Platform.OS === 'web' && typeof document !== 'undefined') {
   const style = document.createElement('style');
-  style.textContent = '* { scrollbar-width: none; } *::-webkit-scrollbar { display: none; }';
+  style.textContent = [
+    '* { scrollbar-width: none; } *::-webkit-scrollbar { display: none; }',
+    'input, textarea { outline: none !important; }',
+  ].join('\n');
   document.head.appendChild(style);
 }
 
@@ -58,7 +64,9 @@ function RootNavigator({ ready }: { ready: boolean }) {
   const lastUser = useRef(userId);
   const profile = useProfile(!!session);
   const isAdmin = useIsAdmin(!!session);
-  const profileLoading = !!session && profile.isPending;
+  // Wait for the admin check too: until it answers, the admin route is hidden, and
+  // landing on /admin then (a reload, a fresh sign-in) bounced or showed a blank screen.
+  const profileLoading = !!session && (profile.isPending || isAdmin.isPending);
   // If the profile can't load, don't trap the user in onboarding; let them in.
   const onboarded = !!profile.data?.onboardedAt || profile.isError;
 
@@ -99,6 +107,10 @@ function RootNavigator({ ready }: { ready: boolean }) {
         {/* The server also checks admin on every query; this only hides the route. */}
         <Stack.Protected guard={!!session && onboarded && isAdmin.data === true}>
           <Stack.Screen name="admin" />
+        </Stack.Protected>
+        {/* Feedback is for readers; admins read it in the admin inbox instead. */}
+        <Stack.Protected guard={!!session && onboarded && isAdmin.data === false}>
+          <Stack.Screen name="feedback" options={{ presentation: 'modal' }} />
         </Stack.Protected>
         {/* Reachable before onboarding, and again later to retake the questions. */}
         <Stack.Protected guard={!!session}>

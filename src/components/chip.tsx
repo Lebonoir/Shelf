@@ -21,6 +21,8 @@ export function Chip({ label, count, selected = false, onPress }: Props) {
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
+      // Chips draw at 36pt; the slop brings the touch area up to the 44pt default.
+      hitSlop={{ top: 4, bottom: 4 }}
       style={[
         styles.chip,
         selected
@@ -45,7 +47,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.two,
     paddingHorizontal: 14,
-    height: 36,
+    minHeight: 36,
+    paddingVertical: Spacing.one,
     borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth * 2,
   },

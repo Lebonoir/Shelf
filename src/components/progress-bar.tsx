@@ -25,9 +25,12 @@ export function ProgressBar({ value, height = 3 }: Props) {
   }));
 
   return (
-    <View style={[styles.track, { height, backgroundColor: theme.surfaceStrong }]}>
+    <View
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(Math.min(1, Math.max(0, value)) * 100) }}
+      style={[styles.track, { height, backgroundColor: theme.surfaceStrong }]}>
       <Animated.View
-        style={[styles.fill, { backgroundColor: theme.accent, transformOrigin: 'left' }, fill]}
+        style={[styles.fill, { backgroundColor: theme.highlight, transformOrigin: 'left' }, fill]}
       />
     </View>
   );

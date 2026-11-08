@@ -4,7 +4,7 @@ import { callFunction } from './functions';
 
 export type Medium = Enums<'medium'>;
 export type Unit = 'page' | 'chapter' | 'issue';
-export type Source = 'anilist' | 'openlibrary' | 'comicvine';
+export type Source = 'anilist' | 'openlibrary' | 'comicvine' | 'googlebooks';
 
 /** A title as the app sees it, whether it came from an API or from Supabase. */
 export type CatalogItem = {
@@ -273,9 +273,7 @@ async function openLibrarySearch(params: Record<string, string>, medium?: Medium
   return remember(json.docs.map((doc) => fromOpenLibrary(doc, medium)));
 }
 
-export const searchBooks = (query: string) => openLibrarySearch({ q: query });
-
-export const searchByIsbn = (isbn: string) => openLibrarySearch({ q: `isbn:${isbn}`, limit: '5' });
+const searchOpenLibraryBooks = (query: string) => openLibrarySearch({ q: query });
 
 const searchOpenLibraryComics = (query: string) =>
   openLibrarySearch({ q: `${query} ${COMIC_FILTER}` }, 'comic');
@@ -320,6 +318,7 @@ async function bookById(id: string): Promise<CatalogItem> {
   const description =
     typeof work.description === 'string' ? work.description : work.description?.value;
   const year = work.first_publish_date?.match(/\d{4}/)?.[0];
+  const editions = await openLibraryEditions(id);
 
   return {
     key: makeKey('openlibrary', id),
@@ -328,14 +327,159 @@ async function bookById(id: string): Promise<CatalogItem> {
     medium: isComicSubject(work.subjects) ? 'comic' : 'book',
     title: work.title,
     authors: authors.filter((a): a is string => !!a),
-    coverUrl: olCover(work.covers?.find((c) => c > 0)),
+    coverUrl: olCover(work.covers?.find((c) => c > 0) ?? editions.cover),
     synopsis: description?.replace(/\(\[source\]\[\d+\]\)|\[\d+\]:.*$/gms, '').trim() ?? null,
     genres: genresFromSubjects(work.subjects),
     year: year ? Number(year) : null,
-    totalUnits: null,
+    totalUnits: editions.pages,
     unit: 'page',
   };
 }
+
+/**
+ * Works carry no page count, and some no cover, so read them off the editions:
+ * the median page count, and the first edition cover. A failure just means neither.
+ */
+async function openLibraryEditions(id: string): Promise<{ pages: number | null; cover: number | undefined }> {
+  try {
+    const res = await fetch(`https://openlibrary.org/works/${id}/editions.json?limit=50`);
+    if (!res.ok) return { pages: null, cover: undefined };
+    const json: { entries: { number_of_pages?: number; covers?: number[] }[] } = await res.json();
+    const pages = json.entries
+      .map((e) => e.number_of_pages)
+      .filter((p): p is number => !!p && p > 0)
+      .sort((a, b) => a - b);
+    const cover = json.entries.flatMap((e) => e.covers ?? []).find((c) => c > 0);
+    return { pages: pages.length ? pages[Math.floor(pages.length / 2)] : null, cover };
+  } catch {
+    return { pages: null, cover: undefined };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Google Books (the main book catalog), through the `googlebooks` edge       */
+/*  function, which holds the API key                                          */
+/* -------------------------------------------------------------------------- */
+
+type GoogleVolume = {
+  id: string;
+  volumeInfo: {
+    title?: string;
+    authors?: string[];
+    publishedDate?: string;
+    description?: string;
+    industryIdentifiers?: { type: string; identifier: string }[];
+    pageCount?: number;
+    categories?: string[];
+    imageLinks?: Partial<Record<'smallThumbnail' | 'thumbnail' | 'small' | 'medium' | 'large' | 'extraLarge', string>>;
+    ratingsCount?: number;
+  };
+};
+
+async function googleBooks<T>(body: { action: 'search'; query: string } | { action: 'volume'; id: string }) {
+  const data = await callFunction<{ results: T }>('googlebooks', body);
+  return data.results;
+}
+
+/**
+ * Largest image Google offers, over https and without the page-curl overlay.
+ * `fife` asks for a sharp ~600px cover; the default thumbnail is only 128px wide.
+ */
+function gbCover(info: GoogleVolume['volumeInfo']): string | null {
+  const links = info.imageLinks;
+  const url = links?.extraLarge ?? links?.large ?? links?.medium ?? links?.small ?? links?.thumbnail;
+  if (url) return `${url.replace(/^http:/, 'https:').replace(/&edge=curl/, '')}&fife=w600-h900`;
+  // No Google art: try Open Library's cover for the same ISBN (404s cleanly when it has none).
+  const isbn = info.industryIdentifiers?.find((i) => i.type === 'ISBN_13')?.identifier;
+  return isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false` : null;
+}
+
+function fromGoogleBooks(volume: GoogleVolume): CatalogItem {
+  const info = volume.volumeInfo;
+  const year = info.publishedDate?.match(/\d{4}/)?.[0];
+  return {
+    key: makeKey('googlebooks', volume.id),
+    source: 'googlebooks',
+    sourceId: volume.id,
+    medium: isComicSubject(info.categories) ? 'comic' : 'book',
+    title: info.title ?? 'Untitled',
+    authors: info.authors?.slice(0, 3) ?? [],
+    coverUrl: gbCover(info),
+    synopsis: cleanDescription(info.description ?? null),
+    genres: genresFromSubjects(info.categories),
+    year: year ? Number(year) : null,
+    totalUnits: info.pageCount || null,
+    unit: 'page',
+  };
+}
+
+/** Same book, any edition or catalog: normalized title plus first author. */
+const bookIdentity = (item: CatalogItem) =>
+  `${normalizeName(item.title)}|${normalizeName(item.authors[0] ?? '')}`;
+
+/**
+ * Google lists every edition and plenty of "Summary of ..." spin-offs. Rank the
+ * closest title first, then ones with covers, then the most rated, and keep one
+ * entry per book.
+ */
+function rankGoogleBooks(volumes: GoogleVolume[], query: string): CatalogItem[] {
+  const q = normalizeName(query);
+  const tier = (name: string) =>
+    name === q ? 0 : name.startsWith(q) || q.startsWith(name) ? 1 : name.includes(q) ? 2 : 3;
+  const ranked = volumes
+    .filter((v) => v.volumeInfo.title)
+    .map((v, index) => ({ item: fromGoogleBooks(v), ratings: v.volumeInfo.ratingsCount ?? 0, index }))
+    .map((r) => ({ ...r, tier: tier(normalizeName(r.item.title)), cover: r.item.coverUrl ? 0 : 1 }))
+    .sort((a, b) => a.tier - b.tier || a.cover - b.cover || b.ratings - a.ratings || a.index - b.index);
+
+  // One entry per book; borrow a page count from another edition when the kept one has none.
+  const kept = new Map<string, CatalogItem>();
+  for (const { item } of ranked) {
+    const id = bookIdentity(item);
+    const first = kept.get(id);
+    if (!first) kept.set(id, item);
+    else if (!first.totalUnits && item.totalUnits) kept.set(id, { ...first, totalUnits: item.totalUnits });
+  }
+  return [...kept.values()];
+}
+
+async function searchGoogleBooks(query: string): Promise<CatalogItem[]> {
+  const volumes = await googleBooks<GoogleVolume[]>({ action: 'search', query });
+  return remember(rankGoogleBooks(volumes, query));
+}
+
+async function googleBookById(id: string): Promise<CatalogItem> {
+  return fromGoogleBooks(await googleBooks<GoogleVolume>({ action: 'volume', id }));
+}
+
+/**
+ * Google Books first (better covers and page counts), then any Open Library
+ * books it missed. Either catalog may fail alone.
+ */
+async function mergeBookSearches(google: Promise<CatalogItem[]>, openLibrary: Promise<CatalogItem[]>, limit: number) {
+  const results = await Promise.allSettled([google, openLibrary]);
+  if (results.every((r) => r.status === 'rejected')) throw new Error('No book catalog responded.');
+  const [fromGoogle, fromOpenLibrary] = results.map((r) => (r.status === 'fulfilled' ? r.value : []));
+  const olByIdentity = new Map(fromOpenLibrary.map((item) => [bookIdentity(item), item]));
+  // Some Google editions list no page count or cover; Open Library's copy of the same book may.
+  const filled = remember(
+    fromGoogle.map((item) => {
+      const ol = olByIdentity.get(bookIdentity(item));
+      return ol
+        ? { ...item, totalUnits: item.totalUnits ?? ol.totalUnits, coverUrl: item.coverUrl ?? ol.coverUrl }
+        : item;
+    }),
+  );
+  const seen = new Set(filled.map(bookIdentity));
+  const extra = fromOpenLibrary.filter((item) => !seen.has(bookIdentity(item)));
+  return [...filled, ...extra].slice(0, limit);
+}
+
+export const searchBooks = (query: string) =>
+  mergeBookSearches(searchGoogleBooks(query), searchOpenLibraryBooks(query), 25);
+
+export const searchByIsbn = (isbn: string) =>
+  mergeBookSearches(searchGoogleBooks(`isbn:${isbn}`), openLibrarySearch({ q: `isbn:${isbn}`, limit: '5' }), 5);
 
 /* -------------------------------------------------------------------------- */
 /*  Comic Vine (comic series), through the `comicvine` edge function, which    */
@@ -462,7 +606,9 @@ export async function fetchTitle(key: string): Promise<CatalogItem> {
       ? await mangaById(sourceId)
       : source === 'comicvine'
         ? await comicById(sourceId)
-        : await bookById(sourceId);
+        : source === 'googlebooks'
+          ? await googleBookById(sourceId)
+          : await bookById(sourceId);
   const known = recall(key);
   const merged: CatalogItem = known
     ? {

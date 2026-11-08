@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { BookmarkSimple, BookOpen, CaretLeft, CheckCircle, Minus, Plus, Trash } from 'phosphor-react-native';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, {
   Extrapolation,
@@ -43,6 +43,7 @@ import {
 } from '@/lib/library';
 import { useProfile } from '@/lib/profile';
 import { similarTitles } from '@/lib/recommend';
+import { confirmDestructive } from '@/lib/confirm';
 
 const HERO_HEIGHT = 340;
 
@@ -213,6 +214,7 @@ function Notes({ entry }: { entry: LibraryEntry }) {
         placeholderTextColor={theme.textTertiary}
         multiline
         textAlignVertical="top"
+        accessibilityLabel="Notes"
         style={[
           styles.notes,
           { color: theme.text, backgroundColor: theme.surface, borderColor: focused ? theme.text : theme.border },
@@ -229,13 +231,6 @@ function ShelfControls({ entry }: { entry: LibraryEntry }) {
   const theme = useTheme();
   const update = useUpdateEntry();
   const remove = useRemoveEntry();
-  const [confirming, setConfirming] = useState(false);
-
-  useEffect(() => {
-    if (!confirming) return;
-    const id = setTimeout(() => setConfirming(false), 3500);
-    return () => clearTimeout(id);
-  }, [confirming]);
 
   return (
     <Animated.View entering={FadeIn} layout={LinearTransition.springify().damping(20)} style={{ gap: Spacing.six }}>
@@ -286,14 +281,18 @@ function ShelfControls({ entry }: { entry: LibraryEntry }) {
       )}
 
       <PressableScale
-        onPress={() => {
-          if (!confirming) return setConfirming(true);
-          remove.mutate(entry.id);
-        }}
-        style={[styles.remove, { borderColor: confirming ? theme.danger : theme.border }]}>
-        <Trash size={16} color={confirming ? theme.danger : theme.textSecondary} />
-        <Text variant="label" tone={confirming ? 'danger' : 'textSecondary'}>
-          {confirming ? 'Tap again to remove from shelf' : 'Remove from shelf'}
+        onPress={() =>
+          confirmDestructive(
+            `Remove ${entry.item.title}?`,
+            'Your progress, rating and notes for it will be deleted.',
+            'Remove',
+            () => remove.mutate(entry.id),
+          )
+        }
+        style={[styles.remove, { borderColor: theme.border }]}>
+        <Trash size={16} color={theme.danger} />
+        <Text variant="label" tone="danger">
+          Remove from Shelf
         </Text>
       </PressableScale>
     </Animated.View>
@@ -389,11 +388,11 @@ export default function TitleScreen() {
                 title={item.title}
                 width={coverWidth}
                 radius={Radius.sm}
-                label={MEDIUM_LABEL[item.medium]}
+                medium={item.medium}
                 byline={item.authors[0]}
               />
               <View style={styles.identityText}>
-                <Text variant="eyebrow" tone="accent">
+                <Text variant="eyebrow" tone={item.medium}>
                   {meta}
                 </Text>
                 <Text variant="display" style={styles.title}>
@@ -577,7 +576,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   stepButton: {
-    height: 44,
+    minHeight: 44,
     minWidth: 52,
     borderRadius: Radius.md,
     borderWidth: StyleSheet.hairlineWidth * 2,
@@ -595,7 +594,7 @@ const styles = StyleSheet.create({
   },
   ratingCell: {
     flex: 1,
-    height: 40,
+    minHeight: 40,
     borderRadius: Radius.sm,
     borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',
@@ -621,7 +620,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.two,
-    height: 46,
+    minHeight: 46,
     borderRadius: Radius.md,
     borderWidth: StyleSheet.hairlineWidth * 2,
     borderStyle: 'dashed',
@@ -644,14 +643,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   barTitle: {
-    marginLeft: GUTTER + 40 + Spacing.three,
+    marginLeft: GUTTER + 44 + Spacing.three,
     marginRight: GUTTER,
   },
   back: {
     position: 'absolute',
     left: GUTTER,
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',

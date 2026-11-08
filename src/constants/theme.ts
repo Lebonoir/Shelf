@@ -1,36 +1,46 @@
 /**
- * Shelf design tokens. Warm paper in light mode, ink in dark mode,
- * one vermilion accent borrowed from printed manga covers.
+ * Shelf design tokens: "Old bookshop". Sage paper and library green, with brass
+ * for progress. Each format has its own ink so you can tell manga, comics and
+ * books apart at a glance. Every text color is at least 4.5:1 on background.
  */
 
 export const Colors = {
   light: {
-    background: '#F3EFE7',
-    surface: '#EAE4D8',
-    surfaceStrong: '#DDD5C5',
-    text: '#1B1A1F',
-    textSecondary: '#6B6660',
-    textTertiary: '#9A938A',
-    border: 'rgba(27, 26, 31, 0.10)',
-    accent: '#C4462E',
-    accentSoft: 'rgba(196, 70, 46, 0.12)',
-    onAccent: '#FFF8F2',
+    background: '#F1F3EE',
+    surface: '#E3E8DF',
+    surfaceStrong: '#D3DACD',
+    text: '#13201A',
+    textSecondary: '#46524B',
+    textTertiary: '#5E6A62',
+    border: 'rgba(19, 32, 26, 0.11)',
+    accent: '#1F6B4A',
+    accentSoft: 'rgba(31, 107, 74, 0.12)',
+    onAccent: '#F6F8F3',
+    /** Brass: progress fills only, never text. */
+    highlight: '#937012',
     danger: '#B3261E',
-    shadow: 'rgba(60, 40, 20, 0.18)',
+    shadow: 'rgba(20, 40, 30, 0.18)',
+    manga: '#8A2236',
+    comic: '#1D3F7A',
+    book: '#6B5408',
   },
   dark: {
-    background: '#141316',
-    surface: '#1E1C20',
-    surfaceStrong: '#2A272C',
-    text: '#F2EEE7',
-    textSecondary: '#A8A29A',
-    textTertiary: '#6F6A64',
-    border: 'rgba(242, 238, 231, 0.09)',
-    accent: '#E0664C',
-    accentSoft: 'rgba(224, 102, 76, 0.16)',
-    onAccent: '#1B0F0B',
+    background: '#0E1612',
+    surface: '#17211C',
+    surfaceStrong: '#22302A',
+    text: '#EAF0E8',
+    textSecondary: '#A9B5AD',
+    textTertiary: '#8C988F',
+    border: 'rgba(234, 240, 232, 0.09)',
+    accent: '#4FBF8A',
+    accentSoft: 'rgba(79, 191, 138, 0.16)',
+    onAccent: '#06180F',
+    highlight: '#D9B44A',
     danger: '#F2B8B5',
     shadow: 'rgba(0, 0, 0, 0.5)',
+    manga: '#F2A7B8',
+    comic: '#9DB8EE',
+    book: '#D9B44A',
   },
 } as const;
 

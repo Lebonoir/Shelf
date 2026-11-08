@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { CaretLeft, ShieldCheck } from 'phosphor-react-native';
+import { ArrowCounterClockwise, Bug, CaretLeft, ChatCircleDots, Check, Lightbulb, ShieldCheck, Tray } from 'phosphor-react-native';
 import { useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
@@ -16,10 +16,20 @@ import { Text } from '@/components/text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { fullName, timeAgo, useAdminOverview, useAdminUsers, type AdminOverview } from '@/lib/admin';
+import {
+  FEEDBACK_KIND_LABEL,
+  useAdminFeedback,
+  useSetFeedbackStatus,
+  type AdminFeedback,
+  type FeedbackKind,
+  type FeedbackStatus,
+} from '@/lib/feedback';
 import { MEDIUM_LABEL, type Medium } from '@/lib/catalog';
 import { STATUS_LABEL, STATUS_ORDER } from '@/lib/library';
 
-type Tab = 'overview' | 'users';
+type Tab = 'overview' | 'users' | 'feedback';
+
+const KIND_ICON = { idea: Lightbulb, bug: Bug, other: ChatCircleDots } satisfies Record<FeedbackKind, unknown>;
 
 const READER_LABEL = { men: 'Men', women: 'Women', unspecified: 'Prefer not to say' } as const;
 const MEDIA: Medium[] = ['manga', 'comic', 'book'];
@@ -370,6 +380,123 @@ function Users() {
   );
 }
 
+function FeedbackRow({ item }: { item: AdminFeedback }) {
+  const theme = useTheme();
+  const setStatus = useSetFeedbackStatus();
+  const Icon = KIND_ICON[item.kind];
+  const resolved = item.status === 'resolved';
+  const bug = item.kind === 'bug';
+  const sender = fullName({ first_name: item.first_name, middle_name: null, last_name: item.last_name });
+  const where = [item.screen, item.platform].filter(Boolean).join(' · ');
+
+  return (
+    <Animated.View
+      entering={FadeIn}
+      style={[styles.feedbackRow, { borderBottomColor: theme.border }, resolved && styles.resolved]}>
+      <View style={styles.feedbackHead}>
+        <View style={[styles.badge, { backgroundColor: bug ? theme.accentSoft : theme.surfaceStrong }]}>
+          <Icon size={12} color={bug ? theme.accent : theme.textSecondary} weight="bold" />
+          <Text variant="caption" tone={bug ? 'accent' : 'textSecondary'}>
+            {FEEDBACK_KIND_LABEL[item.kind]}
+          </Text>
+        </View>
+        <Text variant="mono" tone="textTertiary">
+          {timeAgo(item.created_at)}
+        </Text>
+      </View>
+      <Text style={styles.feedbackMessage}>{item.message}</Text>
+      <View style={styles.feedbackFoot}>
+        <View style={styles.listText}>
+          <Text variant="caption" tone="textSecondary" numberOfLines={1}>
+            {[sender, item.email].filter(Boolean).join(' · ') || 'Deleted account'}
+          </Text>
+          {where ? (
+            <Text variant="mono" tone="textTertiary" numberOfLines={1}>
+              {where}
+            </Text>
+          ) : null}
+        </View>
+        <PressableScale
+          haptic
+          onPress={() => setStatus.mutate({ id: item.id, status: resolved ? 'new' : 'resolved' })}
+          accessibilityRole="button"
+          accessibilityLabel={resolved ? 'Reopen this feedback' : 'Mark this feedback resolved'}
+          style={[styles.resolveButton, { borderColor: theme.border }]}>
+          {resolved ? (
+            <ArrowCounterClockwise size={14} color={theme.textSecondary} weight="bold" />
+          ) : (
+            <Check size={14} color={theme.text} weight="bold" />
+          )}
+          <Text variant="caption" tone={resolved ? 'textSecondary' : 'text'}>
+            {resolved ? 'Reopen' : 'Resolve'}
+          </Text>
+        </PressableScale>
+      </View>
+    </Animated.View>
+  );
+}
+
+function FeedbackInbox() {
+  const theme = useTheme();
+  const feedback = useAdminFeedback();
+  const [show, setShow] = useState<FeedbackStatus>('new');
+
+  if (feedback.isPending) {
+    return (
+      <View style={{ gap: Spacing.four }}>
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} width="100%" height={112} radius={Radius.lg} />
+        ))}
+      </View>
+    );
+  }
+
+  if (feedback.isError) {
+    return (
+      <View style={[styles.errorBox, { backgroundColor: theme.accentSoft }]}>
+        <Text variant="label" tone="danger">
+          Could not load feedback.
+        </Text>
+        <Text variant="caption" tone="textSecondary">
+          {feedback.error.message}
+        </Text>
+        <Button label="Try again" variant="ghost" onPress={() => feedback.refetch()} />
+      </View>
+    );
+  }
+
+  const counts = { new: 0, resolved: 0 };
+  for (const item of feedback.data) counts[item.status]++;
+  const rows = feedback.data.filter((item) => item.status === show);
+
+  return (
+    <View style={styles.userList}>
+      <View style={styles.tabs}>
+        <Chip label="New" count={counts.new} selected={show === 'new'} onPress={() => setShow('new')} />
+        <Chip
+          label="Resolved"
+          count={counts.resolved}
+          selected={show === 'resolved'}
+          onPress={() => setShow('resolved')}
+        />
+      </View>
+      {rows.length === 0 ? (
+        <View style={styles.inboxEmpty}>
+          <Tray size={32} color={theme.textTertiary} />
+          <Text variant="heading">{show === 'new' ? 'Inbox zero' : 'Nothing resolved yet'}</Text>
+          <Text variant="caption" tone="textSecondary">
+            {show === 'new'
+              ? 'Readers send feedback from the speech-bubble button on their Shelf.'
+              : 'Feedback you resolve moves here.'}
+          </Text>
+        </View>
+      ) : (
+        rows.map((item) => <FeedbackRow key={item.id} item={item} />)
+      )}
+    </View>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 
 export default function AdminScreen() {
@@ -380,7 +507,9 @@ export default function AdminScreen() {
   const [tab, setTab] = useState<Tab>('overview');
   const overview = useAdminOverview();
   const users = useAdminUsers();
-  const refreshing = overview.isRefetching || users.isRefetching;
+  const feedback = useAdminFeedback();
+  const refreshing = overview.isRefetching || users.isRefetching || feedback.isRefetching;
+  const newFeedback = feedback.data?.filter((item) => item.status === 'new').length;
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -393,6 +522,7 @@ export default function AdminScreen() {
             onRefresh={() => {
               void overview.refetch();
               void users.refetch();
+              void feedback.refetch();
             }}
             tintColor={theme.textTertiary}
           />
@@ -418,9 +548,15 @@ export default function AdminScreen() {
             selected={tab === 'users'}
             onPress={() => setTab('users')}
           />
+          <Chip
+            label="Feedback"
+            count={newFeedback}
+            selected={tab === 'feedback'}
+            onPress={() => setTab('feedback')}
+          />
         </View>
 
-        {tab === 'overview' ? <Overview /> : <Users />}
+        {tab === 'overview' ? <Overview /> : tab === 'users' ? <Users /> : <FeedbackInbox />}
       </ScrollView>
     </View>
   );
@@ -438,8 +574,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: GUTTER,
   },
   back: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',
@@ -582,5 +718,39 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     borderRadius: Radius.lg,
     alignItems: 'flex-start',
+  },
+  feedbackRow: {
+    gap: Spacing.three,
+    paddingBottom: Spacing.four,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  resolved: {
+    opacity: 0.6,
+  },
+  feedbackHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  feedbackMessage: {
+    maxWidth: 620,
+  },
+  feedbackFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  resolveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 32,
+    paddingHorizontal: 12,
+    borderRadius: Radius.pill,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+  },
+  inboxEmpty: {
+    gap: Spacing.two,
+    paddingVertical: Spacing.six,
   },
 });

@@ -14,6 +14,42 @@ export type Database = {
   };
   public: {
     Tables: {
+      feedback: {
+        Row: {
+          created_at: string;
+          id: string;
+          kind: Database['public']['Enums']['feedback_kind'];
+          message: string;
+          platform: string | null;
+          resolved_at: string | null;
+          screen: string | null;
+          status: Database['public']['Enums']['feedback_status'];
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          kind?: Database['public']['Enums']['feedback_kind'];
+          message: string;
+          platform?: string | null;
+          resolved_at?: string | null;
+          screen?: string | null;
+          status?: Database['public']['Enums']['feedback_status'];
+          user_id?: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          kind?: Database['public']['Enums']['feedback_kind'];
+          message?: string;
+          platform?: string | null;
+          resolved_at?: string | null;
+          screen?: string | null;
+          status?: Database['public']['Enums']['feedback_status'];
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       library_entries: {
         Row: {
           created_at: string;
@@ -156,6 +192,23 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      admin_feedback: {
+        Args: never;
+        Returns: {
+          created_at: string;
+          email: string | null;
+          first_name: string | null;
+          id: string;
+          kind: Database['public']['Enums']['feedback_kind'];
+          last_name: string | null;
+          message: string;
+          platform: string | null;
+          resolved_at: string | null;
+          screen: string | null;
+          status: Database['public']['Enums']['feedback_status'];
+          user_id: string;
+        }[];
+      };
       admin_overview: { Args: never; Returns: Json };
       admin_users: {
         Args: never;
@@ -175,6 +228,8 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean };
     };
     Enums: {
+      feedback_kind: 'idea' | 'bug' | 'other';
+      feedback_status: 'new' | 'resolved';
       medium: 'book' | 'manga' | 'comic';
       read_status: 'reading' | 'planned' | 'completed' | 'on_hold' | 'dropped';
     };

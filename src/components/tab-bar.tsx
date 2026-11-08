@@ -6,7 +6,7 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Radius, Spacing } from '@/constants/theme';
+import { Fonts, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 import { PressableScale } from './pressable-scale';
@@ -58,8 +58,10 @@ export function TabBar({ state, emitter, navigateToTab }: TabBarProps) {
                 const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
                 if (!focused && !event.defaultPrevented) navigateToTab(route.key);
               }}>
-              <tab.Icon size={18} color={color} weight={focused ? 'bold' : 'regular'} />
-              <Text variant="caption" style={{ color, fontFamily: 'Geist_500Medium' }}>
+              {/* HIG tab bars: filled glyph for the selected tab, outline for the rest. */}
+              <tab.Icon size={22} color={color} weight={focused ? 'fill' : 'regular'} />
+              {/* Fixed-width pill: cap growth like the system tab bar does. */}
+              <Text variant="caption" maxFontSizeMultiplier={1.2} style={{ color, fontFamily: Fonts.sansMedium, fontSize: 11, lineHeight: 13 }}>
                 {tab.label}
               </Text>
             </PressableScale>

@@ -2,6 +2,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Platform } from 'react-native';
 
 import {
+  fetchTitle,
   searchBooks,
   searchByIsbn,
   searchComics,
@@ -20,6 +21,8 @@ export type Identification = {
   medium: Medium | null;
   series: string | null;
   volume: string | null;
+  /** The year this run began, which tells relaunches apart: The Flash (1987) vs (2016). */
+  series_start_year: number | null;
   publisher: string | null;
   isbn: string | null;
   search_query: string | null;
@@ -82,6 +85,62 @@ export async function identifyPhoto(base64: string): Promise<Identification> {
 const normalize = (text: string) =>
   text.toLowerCase().replace(/^the\s+/, '').replace(/[^a-z0-9]+/g, ' ').trim();
 
+const issueNumber = (volume: string | null) => {
+  const n = Number.parseInt(volume?.match(/\d+/)?.[0] ?? '', 10);
+  return Number.isFinite(n) ? n : null;
+};
+
+const surname = (name: string) => normalize(name).split(' ').pop() ?? '';
+
+/** How many of the creators read off the cover this catalog entry credits. */
+const creatorHits = (item: CatalogItem, creators: string[]) => {
+  const credited = new Set(item.authors.map(surname));
+  return creators.filter((name) => credited.has(surname(name))).length;
+};
+
+/**
+ * Comic series get relaunched under the same name (The Flash 1959, 1987,
+ * 2016...), so a title match alone picks the wrong run. Use what the cover
+ * says: the run must reach the issue number, should start near the year the
+ * model gave, and should credit the creators printed on the cover.
+ */
+async function pickComicRun(
+  candidates: CatalogItem[],
+  id: Identification,
+  closeness: (item: CatalogItem) => number,
+): Promise<CatalogItem[]> {
+  const issue = issueNumber(id.volume);
+  const scored = candidates.map((item, index) => ({
+    item,
+    index,
+    tier: closeness(item),
+    fits: !issue || item.unit !== 'issue' || !item.totalUnits || item.totalUnits >= issue,
+    gap: id.series_start_year && item.year ? Math.abs(item.year - id.series_start_year) : 99,
+    hits: 0,
+  }));
+  type Scored = (typeof scored)[number];
+  const order = (a: Scored, b: Scored) =>
+    b.hits - a.hits || a.tier - b.tier || Number(b.fits) - Number(a.fits) || a.gap - b.gap || a.index - b.index;
+  scored.sort(order);
+
+  // Credits need a detail lookup per series, so only check the likeliest few.
+  if (id.authors.length) {
+    const likely = scored.filter((s) => s.item.source === 'comicvine' && s.tier <= 1 && s.fits).slice(0, 4);
+    await Promise.all(
+      likely.map(async (s) => {
+        try {
+          s.item = await fetchTitle(s.item.key);
+          s.hits = creatorHits(s.item, id.authors);
+        } catch {
+          // A failed lookup just leaves this candidate unconfirmed.
+        }
+      }),
+    );
+    scored.sort(order);
+  }
+  return scored.map((s) => s.item);
+}
+
 function searchFor(medium: Medium | null, query: string, author: string | undefined) {
   if (medium === 'manga') return searchManga(query);
   if (medium === 'comic') return searchComics(query);
@@ -115,10 +174,13 @@ export async function findMatches(id: Identification): Promise<CatalogItem[]> {
     const title = normalize(item.title);
     return title === target ? 0 : title.startsWith(target) || target.startsWith(title) ? 1 : title.includes(target) ? 2 : 3;
   };
-  const ranked = titled
-    .map((item, index) => ({ item, index, score: closeness(item) }))
-    .sort((a, b) => a.score - b.score || a.index - b.index)
-    .map(({ item }) => item);
+  const ranked =
+    id.medium === 'comic'
+      ? await pickComicRun(titled, id, closeness)
+      : titled
+          .map((item, index) => ({ item, index, score: closeness(item) }))
+          .sort((a, b) => a.score - b.score || a.index - b.index)
+          .map(({ item }) => item);
 
   const seen = new Set<string>();
   return [...(byIsbn.status === 'fulfilled' ? byIsbn.value : []), ...ranked]

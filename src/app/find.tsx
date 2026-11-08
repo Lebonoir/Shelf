@@ -11,7 +11,7 @@ import {
   X,
 } from 'phosphor-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Linking, Platform, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -203,7 +203,7 @@ function MatchRow({ item, owned, best }: { item: CatalogItem; owned: boolean; be
         title={item.title}
         width={best ? 76 : 48}
         radius={4}
-        label={MEDIUM_LABEL[item.medium]}
+        medium={item.medium}
         byline={item.authors[0]}
       />
       <View style={styles.matchText}>
@@ -352,9 +352,19 @@ export default function FindScreen() {
             {state.notice && (
               <View style={[styles.notice, { backgroundColor: theme.accentSoft }]}>
                 <Warning size={18} color={theme.accent} />
-                <Text variant="caption" tone="textSecondary" style={styles.noticeText}>
-                  {state.notice}
-                </Text>
+                <View style={styles.noticeText}>
+                  <Text variant="caption" tone="textSecondary">
+                    {state.notice}
+                  </Text>
+                  {/* Take people straight to the switch instead of telling them to find it. */}
+                  {Platform.OS !== 'web' && (
+                    <PressableScale onPress={() => void Linking.openSettings()} hitSlop={10} style={styles.settingsLink}>
+                      <Text variant="label" tone="accent">
+                        Open Settings
+                      </Text>
+                    </PressableScale>
+                  )}
+                </View>
               </View>
             )}
             <View style={styles.actions}>
@@ -373,10 +383,11 @@ export default function FindScreen() {
               />
             </View>
             <View style={[styles.tips, { borderTopColor: theme.border }]}>
-              {TIPS.map((tip, index) => (
+              {/* Bullets, not 01/02/03: the tips are not a sequence. */}
+              {TIPS.map((tip) => (
                 <View key={tip} style={styles.tip}>
-                  <Text variant="mono" tone="textTertiary">
-                    {String(index + 1).padStart(2, '0')}
+                  <Text variant="label" tone="accent">
+                    {'•'}
                   </Text>
                   <Text variant="caption" tone="textSecondary" style={styles.tipText}>
                     {tip}
@@ -407,7 +418,7 @@ export default function FindScreen() {
             {state.id.found && state.id.title ? (
               <Animated.View entering={FadeInDown.springify().damping(18)} style={styles.readout}>
                 <View style={styles.readoutHead}>
-                  <Text variant="eyebrow" tone="accent">
+                  <Text variant="eyebrow" tone={state.id.medium ?? 'accent'}>
                     {[state.id.medium ? MEDIUM_LABEL[state.id.medium] : null, state.id.volume ? `Vol. ${state.id.volume}` : null]
                       .filter(Boolean)
                       .join(' · ') || 'Identified'}
@@ -528,8 +539,8 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   iconButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',
@@ -630,6 +641,10 @@ const styles = StyleSheet.create({
   },
   noticeText: {
     flex: 1,
+    gap: Spacing.two,
+  },
+  settingsLink: {
+    alignSelf: 'flex-start',
   },
   steps: {
     gap: Spacing.two,
