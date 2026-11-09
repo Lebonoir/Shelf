@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ArrowRight, Books, ChatCircleText, Plus, Scan, ShieldCheck, SignOut } from 'phosphor-react-native';
+import { ArrowRight, Books, ChatCircleText, Plus, Rows, Scan, ShieldCheck, SignOut, SquaresFour } from 'phosphor-react-native';
 import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -35,6 +35,39 @@ const GRID_GAP = Spacing.four;
 
 type Filter = 'all' | Exclude<ReadStatus, 'reading'>;
 
+/** "Ch 12 / 95", or "Ch 12" when the catalog has no total. */
+const progressLabel = ({ progress, item }: LibraryEntry) =>
+  `${UNIT_LABEL[item.unit].short} ${progress}${item.totalUnits ? ` / ${item.totalUnits}` : ''}`;
+
+/** Compact shelf row: small cover, title, and how far you are. */
+function ShelfRow({ entry }: { entry: LibraryEntry }) {
+  const { item } = entry;
+  return (
+    <PressableScale scaleTo={0.985} onPress={() => openTitle(item)} style={styles.row}>
+      <Cover uri={item.coverUrl} title={item.title} width={48} radius={4} medium={item.medium} byline={item.authors[0]} />
+      <View style={styles.rowBody}>
+        <Text variant="eyebrow" tone={item.medium}>
+          {[MEDIUM_LABEL[item.medium], STATUS_LABEL[entry.status]].join(' · ')}
+        </Text>
+        <Text variant="heading" numberOfLines={2}>
+          {item.title}
+        </Text>
+        <View style={styles.rowProgress}>
+          <Text variant="mono" tone="textSecondary">
+            {progressLabel(entry)}
+          </Text>
+          {entry.rating ? (
+            <Text variant="mono" tone="textTertiary">
+              {entry.rating}/10
+            </Text>
+          ) : null}
+        </View>
+        {item.totalUnits ? <ProgressBar value={entry.progress / item.totalUnits} /> : null}
+      </View>
+    </PressableScale>
+  );
+}
+
 function ReadingCard({ entry }: { entry: LibraryEntry }) {
   const theme = useTheme();
   const update = useUpdateEntry();
@@ -59,8 +92,7 @@ function ReadingCard({ entry }: { entry: LibraryEntry }) {
         <View style={styles.readingProgress}>
           <View style={styles.readingRow}>
             <Text variant="mono" tone="textSecondary">
-              {unit.short} {entry.progress}
-              {item.totalUnits ? ` / ${item.totalUnits}` : ''}
+              {progressLabel(entry)}
             </Text>
             <PressableScale
               haptic
@@ -105,6 +137,7 @@ export default function ShelfScreen() {
   const library = useLibrary();
   const isAdmin = useIsAdmin();
   const [filter, setFilter] = useState<Filter>('all');
+  const [compact, setCompact] = useState(false);
 
   const entries = useMemo(() => library.data ?? [], [library.data]);
   const reading = entries.filter((e) => e.status === 'reading');
@@ -132,6 +165,16 @@ export default function ShelfScreen() {
         subtitle={summary || undefined}
         trailing={
           <View style={styles.headerActions}>
+            <PressableScale
+              accessibilityLabel={compact ? 'Show as covers' : 'Show as list'}
+              onPress={() => setCompact(!compact)}
+              style={[styles.iconButton, { borderColor: theme.border }]}>
+              {compact ? (
+                <SquaresFour size={18} color={theme.textSecondary} />
+              ) : (
+                <Rows size={18} color={theme.textSecondary} />
+              )}
+            </PressableScale>
             {/* Admins get their dashboard (where feedback lands); readers get the feedback form. */}
             {isAdmin.data ? (
               <PressableScale
@@ -270,12 +313,16 @@ export default function ShelfScreen() {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <FlatList
-        key={COLUMNS}
+        // A FlatList can't change numColumns in place; a new key remounts it.
+        key={compact ? 'list' : 'grid'}
         data={shelved}
         keyExtractor={(e) => e.id}
-        numColumns={COLUMNS}
+        numColumns={compact ? 1 : COLUMNS}
         ListHeaderComponent={header}
-        columnWrapperStyle={styles.gridRow}
+        columnWrapperStyle={compact ? undefined : styles.gridRow}
+        ItemSeparatorComponent={
+          compact ? () => <View style={[styles.separator, { backgroundColor: theme.border }]} /> : undefined
+        }
         contentContainerStyle={[styles.content, { width, paddingBottom: TAB_BAR_CLEARANCE + insets.bottom }]}
         style={styles.list}
         refreshControl={
@@ -287,6 +334,9 @@ export default function ShelfScreen() {
         }
         renderItem={({ item: entry, index }) => (
           <Animated.View entering={index < 12 ? FadeInDown.delay(index * 35).springify().damping(18) : undefined}>
+            {compact ? (
+              <ShelfRow entry={entry} />
+            ) : (
             <CoverTile
               item={entry.item}
               width={tileWidth}
@@ -294,6 +344,7 @@ export default function ShelfScreen() {
                 .filter(Boolean)
                 .join(' · ')}
             />
+            )}
           </Animated.View>
         )}
       />
@@ -406,6 +457,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.two,
     paddingHorizontal: GUTTER,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.four,
+    paddingVertical: Spacing.three,
+  },
+  rowBody: {
+    flex: 1,
+    gap: Spacing.one + 2,
+  },
+  rowProgress: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 48 + Spacing.four,
   },
   gridRow: {
     gap: GRID_GAP,
